@@ -9,12 +9,9 @@ import sys
 from bs4 import BeautifulSoup
 
 
-def download_photo_gallery(dir_path, post_content, requests_meta):
+def download_photo_gallery(post_path, post_content, requests_meta):
     regex_ext = re.compile(r'[^\.]+$')
     regex_url = re.compile(r'^[^\?]+')
-    post_path = dir_path + '/' + \
-        str(post_content['id']) + '_' + post_content['title']
-    os.makedirs(post_path)
     if post_content['comment'] is not None:
         file_path = post_path + '/comment.txt'
         with open(file_path, mode='w') as f:
@@ -40,10 +37,7 @@ def download_photo_gallery(dir_path, post_content, requests_meta):
             f.write(img.content)
 
 
-def download_file(dir_path, post_content, requests_meta):
-    post_path = dir_path + '/' + \
-        str(post_content['id']) + '_' + post_content['title']
-    os.makedirs(post_path)
+def download_file(post_path, post_content, requests_meta):
     if post_content['comment'] is not None:
         file_path = post_path + '/comment.txt'
         with open(file_path, mode='w') as f:
@@ -60,11 +54,25 @@ def download_file(dir_path, post_content, requests_meta):
         f.write(file_data.content)
 
 
+def download_text(post_path, post_content, requests_meta):
+    if post_content['comment'] is not None:
+        file_path = post_path + '/comment.txt'
+        with open(file_path, mode='w') as f:
+            f.write(post_content['comment'])
+
+
+def download_product(post_path, post_content, requests_meta):
+    if post_content['comment'] is not None:
+        file_path = post_path + '/comment.txt'
+        with open(file_path, mode='w') as f:
+            f.write(post_content['comment'])
+    file_path = post_path + '/url.txt'
+    with open(file_path, mode='w') as f:
+        f.write(post_content['product']['uri'])
+
+
 def download_post(dir_path, post_id, requests_meta):
-    if os.path.exists(dir_path):
-        return True
-    else:
-        os.makedirs(dir_path)
+    os.makedirs(dir_path, exist_ok=True)
     post_url = requests_meta['url_scheme'] + \
         requests_meta['site_domain'] + '/api/v1/posts/' + post_id
     regex_ext = re.compile(r'[^\.]+$')
@@ -76,27 +84,43 @@ def download_post(dir_path, post_id, requests_meta):
     post_data = json.loads(res.text)
 
     file_path = dir_path + '/comment.txt'
-    with open(file_path, mode='w') as f:
-        f.write(post_data['post']['comment'])
+    if not os.path.isfile(file_path):
+        with open(file_path, mode='w') as f:
+            f.write(post_data['post']['comment'])
 
-    try:
-        img = requests.get(post_data['post']['thumb']['original'],
-                           cookies=requests_meta['cookies'])
-    except requests.exceptions.RequestException as err:
-        print(err)
-        return False
-    file_path = dir_path + '/thumb.' + \
-        regex_ext.search(post_data['post']['thumb']['original']).group()
-    with open(file_path, mode='wb') as f:
-        f.write(img.content)
+    if post_data['post']['thumb'] is not None:
+        file_path = dir_path + '/thumb.' + \
+            regex_ext.search(post_data['post']['thumb']['original']).group()
+        if not os.path.isfile(file_path):
+            try:
+                img = requests.get(post_data['post']['thumb']['original'],
+                                   cookies=requests_meta['cookies'])
+            except requests.exceptions.RequestException as err:
+                print(err)
+                return False
+            with open(file_path, mode='wb') as f:
+                f.write(img.content)
 
     for post_content in post_data['post']['post_contents']:
-        if post_content['category'] == 'photo_gallery':
-            download_photo_gallery(dir_path, post_content, requests_meta)
-        elif post_content['category'] == 'file':
-            download_file(dir_path, post_content, requests_meta)
+        if post_content['visible_status'] != 'visible':
+            continue
+        title = post_content['title'] or ''
+        post_path = dir_path + '/' + \
+            str(post_content['id']) + '_' + title
+        if os.path.isdir(post_path):
+            continue
         else:
-            print('unknown category\n')
+            os.makedirs(post_path)
+        if post_content['category'] == 'photo_gallery':
+            download_photo_gallery(post_path, post_content, requests_meta)
+        elif post_content['category'] == 'file':
+            download_file(post_path, post_content, requests_meta)
+        elif post_content['category'] == 'text':
+            download_text(post_path, post_content, requests_meta)
+        elif post_content['category'] == 'product':
+            download_product(post_path, post_content, requests_meta)
+        else:
+            print(post_id + ' unknown category\n')
             sys.exit()
 
     time.sleep(random.random())
@@ -104,7 +128,8 @@ def download_post(dir_path, post_id, requests_meta):
 
 def get_posts(user_id, requests_meta):
     savedata_dir = './data'
-    for page_num in range(1, 100):
+    page_num = 1
+    while True:
         if page_num == 1:
             posts_url = requests_meta['url_scheme'] + \
                 requests_meta['site_domain'] + \
@@ -120,7 +145,6 @@ def get_posts(user_id, requests_meta):
             return
         page_bs = BeautifulSoup(res.text, 'html.parser')
         post_links = page_bs.select('div.post')
-        print(len(post_links))
         for post_link in post_links:
             post_title = post_link.select_one('.post-title').string
             post_date = post_link.select_one('.post-date > .mr-5')
@@ -134,8 +158,11 @@ def get_posts(user_id, requests_meta):
             post_href = post_link.select_one('a.link-block').get('href')
             post_id = re.search(r'\d+$', post_href).group()
             dir_name = post_id + '_' + post_title + '_' + post_date
-            dir_path = savedata_dir + '/' + dir_name
+            dir_path = savedata_dir + '/' + user_id + '/' + dir_name
             download_post(dir_path, post_id, requests_meta)
+        if len(post_links) != 20:
+            break
+        page_num += 1
 
 
 parser = argparse.ArgumentParser(description='fantia data downloader')
