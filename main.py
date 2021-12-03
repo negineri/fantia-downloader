@@ -1,4 +1,6 @@
 import argparse
+from posixpath import commonpath
+from bs4.element import Comment
 import requests
 import re
 import json
@@ -70,6 +72,31 @@ def download_product(post_path, post_content, requests_meta):
     with open(file_path, mode='w') as f:
         f.write(post_content['product']['uri'])
 
+def download_blog(post_path, post_content, requests_meta):
+    regex_ext = re.compile(r'[^\.]+$')
+    regex_url = re.compile(r'^[^\?]+')
+    print("content type blog " + post_path)
+    if post_content['comment'] is not None:
+        file_path = post_path + '/comment.txt'
+        with open(file_path, mode='w') as f:
+            f.write(post_content['comment'])
+    blog_contents = json.loads(post_content['comment'])
+    for blog_content in blog_contents['ops']:
+        if type(blog_content['insert']) is not str:
+            if 'fantiaImage' in blog_content['insert']:
+                img_url = blog_content['insert']['fantiaImage']['url'].encode().decode('unicode-escape')
+                file_path = post_path + '/' + \
+                    blog_content['insert']['fantiaImage']['id'] + '.' + \
+                    regex_ext.search(regex_url.search(img_url).group()).group()
+                try:
+                    img = requests.get(img_url, cookies=requests_meta['cookies'])
+                except requests.exceptions.RequestException as err:
+                    print(err)
+                    return False
+                with open(file_path, mode='wb') as f:
+                    f.write(img.content)
+            elif 'image' in blog_content['insert']:
+                print("insert image")
 
 def download_post(dir_path, post_id, requests_meta):
     os.makedirs(dir_path, exist_ok=True)
@@ -119,6 +146,8 @@ def download_post(dir_path, post_id, requests_meta):
             download_text(post_path, post_content, requests_meta)
         elif post_content['category'] == 'product':
             download_product(post_path, post_content, requests_meta)
+        elif post_content['category'] == 'blog':
+            download_blog(post_path, post_content, requests_meta)
         else:
             print(post_id + ' unknown category\n')
             sys.exit()
