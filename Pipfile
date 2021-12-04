@@ -10,6 +10,7 @@ pylint = "*"
 [packages]
 requests = "*"
 beautifulsoup4 = "*"
+pathvalidate = "*"
 
 [requires]
 python_version = "3.9"

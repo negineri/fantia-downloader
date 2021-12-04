@@ -1,6 +1,5 @@
 import argparse
-from posixpath import commonpath
-from bs4.element import Comment
+from pathvalidate import sanitize_filename
 import requests
 import re
 import json
@@ -133,7 +132,7 @@ def download_post(dir_path, post_id, requests_meta):
             continue
         title = post_content['title'] or ''
         post_path = dir_path + '/' + \
-            str(post_content['id']) + '_' + title
+            sanitize_filename(str(post_content['id']) + '_' + title)
         if os.path.isdir(post_path):
             continue
         else:
@@ -186,7 +185,7 @@ def get_posts(user_id, requests_meta):
 
             post_href = post_link.select_one('a.link-block').get('href')
             post_id = re.search(r'\d+$', post_href).group()
-            dir_name = post_id + '_' + post_title + '_' + post_date
+            dir_name = sanitize_filename(post_id + '_' + post_title + '_' + post_date)
             dir_path = savedata_dir + '/' + user_id + '/' + dir_name
             download_post(dir_path, post_id, requests_meta)
         if len(post_links) != 20:
